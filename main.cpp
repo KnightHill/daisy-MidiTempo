@@ -18,8 +18,10 @@ static uint16_t tt_count = 0;
 // Prototypes
 float    bpm_to_freq(uint32_t tempo);
 uint32_t ms_to_bpm(uint32_t ms);
-void HandleSystemRealTime(uint8_t srt_type);
-void     AudioCallback(AudioHandle::InputBuffer  in, AudioHandle::OutputBuffer out, size_t size);
+void     HandleSystemRealTime(uint8_t srt_type);
+void     AudioCallback(AudioHandle::InputBuffer  in,
+                       AudioHandle::OutputBuffer out,
+                       size_t                    size);
 
 float bpm_to_freq(uint32_t tempo)
 {
@@ -31,8 +33,29 @@ uint32_t ms_to_bpm(uint32_t ms)
     return 60000 / ms;
 }
 
-void AudioCallback(AudioHandle::InputBuffer  in, AudioHandle::OutputBuffer out, size_t size)
+void AudioCallback(AudioHandle::InputBuffer  in,
+                   AudioHandle::OutputBuffer out,
+                   size_t                    size)
 {
+    hw.ProcessAllControls();
+
+    if(hw.button1.RisingEdge())
+    {
+        uint32_t ms   = System::GetNow();
+        uint32_t diff = ms - prev_ms;
+        uint32_t bpm  = ms_to_bpm(diff);
+#ifdef DEBUG
+        hw.seed.PrintLine("msec=%d, diff=%d, BPM=%d", ms, diff, bpm);
+#endif
+        if(bpm >= TTEMPO_MIN && bpm <= TTEMPO_MAX)
+        {
+            // set BPM
+            lfo.SetFreq(bpm_to_freq(bpm));
+        }
+
+        prev_ms = ms;
+    }
+
     for(size_t i = 0; i < size; i++)
     {
         lfo_out   = lfo.Process();
@@ -43,22 +66,13 @@ void AudioCallback(AudioHandle::InputBuffer  in, AudioHandle::OutputBuffer out, 
 
 void HandleSystemRealTime(uint8_t srt_type)
 {
-    switch(srt_type)
-    {
-        // 0xFA - start
-        case Start: break;
-
-        // 0xFC - stop
-        case Stop: break;
-
 #ifdef DEBUG
-        default:
-            hw.seed.PrintLine("MIDI SystemRealTime: %x", m.srt_type);
-            break;
+    default: hw.seed.PrintLine("MIDI SystemRealTime: %x", m.srt_type); break;
 #endif
 
         // MIDI Clock -  24 clicks per quarter note
-        case TimingClock:
+        if(srt_type == TimingClock)
+        {
             tt_count++;
             if(tt_count == 24)
             {
@@ -73,11 +87,10 @@ void HandleSystemRealTime(uint8_t srt_type)
                     lfo.SetFreq(bpm_to_freq(bpm));
                 }
 
-                prev_ms = ms;
+                prev_ms  = ms;
                 tt_count = 0;
             }
-            break;
-    }
+        }
 }
 
 int main(void)
